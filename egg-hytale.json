@@ -4,7 +4,7 @@
         "version": "PLCN_v3",
         "update_url": "https://raw.githubusercontent.com/NATroutter/egg-hytale/refs/heads/main/egg-hytale.json"
     },
-    "exported_at": "2026-01-11T22:16:24+00:00",
+    "exported_at": "2026-01-11T22:23:30+00:00",
     "name": "Hytale",
     "author": "contact@natroutter.fi",
     "uuid": "6594b287-2d7b-4249-bc93-4d40283c57e3",
@@ -42,7 +42,7 @@
             "description": "Acknowledge that loading early plugins is unsupported and may cause stability issues",
             "env_variable": "ACCEPT_EARLY_PLUGINS",
             "default_value": "0",
-            "user_viewable": false,
+            "user_viewable": true,
             "user_editable": true,
             "rules": [
                 "boolean",
@@ -55,7 +55,7 @@
             "description": "Do you wish to allow operators or not",
             "env_variable": "ALLOW_OP",
             "default_value": "1",
-            "user_viewable": false,
+            "user_viewable": true,
             "user_editable": true,
             "rules": [
                 "boolean",
@@ -68,7 +68,7 @@
             "description": "Assets pack (.zip) that are being send to player",
             "env_variable": "ASSET_PACK",
             "default_value": "Assets.zip",
-            "user_viewable": false,
+            "user_viewable": true,
             "user_editable": true,
             "rules": [
                 "string",
@@ -81,7 +81,7 @@
             "description": "Authentication mode",
             "env_variable": "AUTH_MODE",
             "default_value": "authenticated",
-            "user_viewable": false,
+            "user_viewable": true,
             "user_editable": true,
             "rules": [
                 "required",
@@ -95,7 +95,7 @@
             "description": "Update the hytale server automaticly",
             "env_variable": "AUTOMATIC_UPDATE",
             "default_value": "1",
-            "user_viewable": false,
+            "user_viewable": true,
             "user_editable": true,
             "rules": [
                 "required",
@@ -108,7 +108,7 @@
             "description": "Directory where backups are saved",
             "env_variable": "BACKUP_DIRECTORY",
             "default_value": "/backup",
-            "user_viewable": false,
+            "user_viewable": true,
             "user_editable": true,
             "rules": [
                 "required",
@@ -121,7 +121,7 @@
             "description": "Backup interval in minutes",
             "env_variable": "BACKUP_FREQUENCY",
             "default_value": "30",
-            "user_viewable": false,
+            "user_viewable": true,
             "user_editable": true,
             "rules": [
                 "integer",
@@ -135,7 +135,7 @@
             "description": "Important: Disable Sentry during active plugin development.\n\nHytale use Sentry to track crashes. Disable it to avoid submitting your development errors",
             "env_variable": "DISABLE_SENTRY",
             "default_value": "1",
-            "user_viewable": false,
+            "user_viewable": true,
             "user_editable": true,
             "rules": [
                 "boolean",
@@ -148,7 +148,7 @@
             "description": "Enable automatic backups",
             "env_variable": "ENABLE_BACKUPS",
             "default_value": "0",
-            "user_viewable": false,
+            "user_viewable": true,
             "user_editable": true,
             "rules": [
                 "boolean",
@@ -161,7 +161,7 @@
             "description": "Additional Java Virtual Machine arguments for advanced configuration.\n\nWarning: Improper JVM settings can lead to poor performance, crashes, or failure to start. Only modify if you understand what these parameters do.",
             "env_variable": "JVM_ARGS",
             "default_value": "-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1",
-            "user_viewable": false,
+            "user_viewable": true,
             "user_editable": true,
             "rules": [
                 "string"
@@ -173,7 +173,7 @@
             "description": "The server ships with a pre-trained AOT cache (HytaleServer.aot) that improves boot times by skipping JIT warmup. See https://openjdk.org/jeps/514",
             "env_variable": "LEVERAGE_AHEAD_OF_TIME_CACHE",
             "default_value": "1",
-            "user_viewable": false,
+            "user_viewable": true,
             "user_editable": true,
             "rules": [
                 "required",

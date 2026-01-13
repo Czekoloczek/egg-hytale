@@ -11,6 +11,7 @@
 ################################################################################
 
 DOWNLOADER="./hytale-downloader-linux-amd64"
+AUTH_CACHE_FILE=".hytale-auth-tokens.json"
 
 # Function to extract downloaded server files
 extract_server_files() {
@@ -46,6 +47,196 @@ extract_server_files() {
         echo "Error: Server archive not found at $SERVER_ZIP"
         exit 1
     fi
+}
+
+# Function to check if cached tokens exist
+check_cached_tokens() {
+    if [ -f "$AUTH_CACHE_FILE" ]; then
+        # Check if jq is available
+        if ! command -v jq &> /dev/null; then
+            echo "Warning: jq not found, cannot use cached tokens"
+            return 1
+        fi
+
+        # Validate JSON format
+        if ! jq empty "$AUTH_CACHE_FILE" 2>/dev/null; then
+            echo "Warning: Invalid cached token file, removing..."
+            rm "$AUTH_CACHE_FILE"
+            return 1
+        fi
+
+        echo "✓ Found cached authentication tokens"
+        return 0
+    fi
+    return 1
+}
+
+# Function to load cached tokens
+load_cached_tokens() {
+    ACCESS_TOKEN=$(jq -r '.access_token' "$AUTH_CACHE_FILE")
+    SESSION_TOKEN=$(jq -r '.session_token' "$AUTH_CACHE_FILE")
+    IDENTITY_TOKEN=$(jq -r '.identity_token' "$AUTH_CACHE_FILE")
+    PROFILE_UUID=$(jq -r '.profile_uuid' "$AUTH_CACHE_FILE")
+    
+    # Validate all required tokens are present
+    if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ] || \
+       [ -z "$SESSION_TOKEN" ] || [ "$SESSION_TOKEN" = "null" ] || \
+       [ -z "$IDENTITY_TOKEN" ] || [ "$IDENTITY_TOKEN" = "null" ] || \
+       [ -z "$PROFILE_UUID" ] || [ "$PROFILE_UUID" = "null" ]; then
+        echo "Error: Incomplete cached tokens, re-authenticating..."
+        rm "$AUTH_CACHE_FILE"
+        return 1
+    fi
+    
+    echo "✓ Loaded cached authentication tokens"
+    return 0
+}
+
+# Function to save authentication tokens
+save_auth_tokens() {
+    cat > "$AUTH_CACHE_FILE" << EOF
+{
+  "access_token": "$ACCESS_TOKEN",
+  "session_token": "$SESSION_TOKEN",
+  "identity_token": "$IDENTITY_TOKEN",
+  "profile_uuid": "$PROFILE_UUID",
+  "timestamp": $(date +%s)
+}
+EOF
+    echo "✓ Authentication tokens cached for future use"
+}
+
+# Function to perform full authentication
+perform_authentication() {
+    echo "Obtaining authentication tokens..."
+
+    # Step 1: Request device code
+    AUTH_RESPONSE=$(curl -s -X POST "https://oauth.accounts.hytale.com/oauth2/device/auth" \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -d "client_id=hytale-server" \
+      -d "scope=openid offline auth:server")
+
+    # Extract device_code and verification_uri_complete using jq
+    DEVICE_CODE=$(echo "$AUTH_RESPONSE" | jq -r '.device_code')
+    VERIFICATION_URI=$(echo "$AUTH_RESPONSE" | jq -r '.verification_uri_complete')
+    POLL_INTERVAL=$(echo "$AUTH_RESPONSE" | jq -r '.interval')
+
+    # Display authentication banner
+    echo ""
+    echo "╔═════════════════════════════════════════════════════════════════════════════╗"
+    echo "║                       HYTALE SERVER AUTHENTICATION REQUIRED                 ║"
+    echo "╠═════════════════════════════════════════════════════════════════════════════╣"
+    echo "║                                                                             ║"
+    echo "║  Please authenticate the server by visiting the following URL:              ║"
+    echo "║                                                                             ║"
+    echo "║  $VERIFICATION_URI  ║"
+    echo "║                                                                             ║"
+    echo "║  1. Click the link above or copy it to your browser                         ║"
+    echo "║  2. Sign in with your Hytale account                                        ║"
+    echo "║  3. Authorize the server                                                    ║"
+    echo "║                                                                             ║"
+    echo "║  Waiting for authentication...                                              ║"
+    echo "║                                                                             ║"
+    echo "╚═════════════════════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    # Step 2: Poll for access token
+    ACCESS_TOKEN=""
+    while [ -z "$ACCESS_TOKEN" ]; do
+        sleep $POLL_INTERVAL
+
+        TOKEN_RESPONSE=$(curl -s -X POST "https://oauth.accounts.hytale.com/oauth2/token" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          -d "client_id=hytale-server" \
+          -d "grant_type=urn:ietf:params:oauth:grant-type:device_code" \
+          -d "device_code=$DEVICE_CODE")
+
+        # Check if we got an error
+        ERROR=$(echo "$TOKEN_RESPONSE" | jq -r '.error // empty')
+
+        if [ "$ERROR" = "authorization_pending" ]; then
+            echo "Still waiting for authentication..."
+            continue
+        elif [ -n "$ERROR" ]; then
+            echo "Authentication error: $ERROR"
+            exit 1
+        else
+            # Successfully authenticated
+            ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token')
+            echo ""
+            echo "✓ Authentication successful!"
+            echo ""
+        fi
+    done
+
+    # Fetch available game profiles
+    echo "Fetching game profiles..."
+
+    PROFILES_RESPONSE=$(curl -s -X GET "https://account-data.hytale.com/my-account/get-profiles" \
+      -H "Authorization: Bearer $ACCESS_TOKEN")
+
+    # Check if profiles list is empty
+    PROFILES_COUNT=$(echo "$PROFILES_RESPONSE" | jq '.profiles | length')
+
+    if [ "$PROFILES_COUNT" -eq 0 ]; then
+        echo "Error: No game profiles found. You need to purchase Hytale to run a server."
+        exit 1
+    fi
+
+    # Select profile based on GAME_PROFILE variable
+    if [ -n "$GAME_PROFILE" ]; then
+        # User specified a profile username, find matching UUID
+        echo "Looking for profile: $GAME_PROFILE"
+        PROFILE_UUID=$(echo "$PROFILES_RESPONSE" | jq -r ".profiles[] | select(.username == \"$GAME_PROFILE\") | .uuid")
+
+        if [ -z "$PROFILE_UUID" ] || [ "$PROFILE_UUID" = "null" ]; then
+            echo "Error: Profile '$GAME_PROFILE' not found."
+            echo "Available profiles:"
+            echo "$PROFILES_RESPONSE" | jq -r '.profiles[] | "  - \(.username)"'
+            exit 1
+        fi
+
+        echo "✓ Using profile: $GAME_PROFILE (UUID: $PROFILE_UUID)"
+    else
+        # Use first profile from the list
+        PROFILE_UUID=$(echo "$PROFILES_RESPONSE" | jq -r '.profiles[0].uuid')
+        PROFILE_USERNAME=$(echo "$PROFILES_RESPONSE" | jq -r '.profiles[0].username')
+
+        echo "✓ Using default profile: $PROFILE_USERNAME (UUID: $PROFILE_UUID)"
+    fi
+
+    echo ""
+
+    # Create game server session
+    echo "Creating game server session..."
+
+    SESSION_RESPONSE=$(curl -s -X POST "https://sessions.hytale.com/game-session/new" \
+      -H "Authorization: Bearer $ACCESS_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"uuid\": \"${PROFILE_UUID}\"}")
+
+    # Validate JSON response
+    if ! echo "$SESSION_RESPONSE" | jq empty 2>/dev/null; then
+        echo "Error: Invalid JSON response from game session creation"
+        echo "Response: $SESSION_RESPONSE"
+        exit 1
+    fi
+
+    # Extract session and identity tokens
+    SESSION_TOKEN=$(echo "$SESSION_RESPONSE" | jq -r '.sessionToken')
+    IDENTITY_TOKEN=$(echo "$SESSION_RESPONSE" | jq -r '.identityToken')
+
+    if [ -z "$SESSION_TOKEN" ] || [ "$SESSION_TOKEN" = "null" ]; then
+        echo "Error: Failed to create game server session"
+        echo "Response: $SESSION_RESPONSE"
+        exit 1
+    fi
+
+    echo "✓ Game server session created successfully!"
+    echo ""
+    
+    # Save tokens for future use
+    save_auth_tokens
 }
 
 # Check if the downloader exists
@@ -85,133 +276,13 @@ if [ ! -f "HytaleServer.jar" ]; then
     exit 1
 fi
 
-# Obtain authentication tokens
-echo "Obtaining authentication tokens..."
-
-# Step 1: Request device code
-AUTH_RESPONSE=$(curl -s -X POST "https://oauth.accounts.hytale.com/oauth2/device/auth" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "client_id=hytale-server" \
-  -d "scope=openid offline auth:server")
-
-# Extract device_code and verification_uri_complete using jq
-DEVICE_CODE=$(echo "$AUTH_RESPONSE" | jq -r '.device_code')
-VERIFICATION_URI=$(echo "$AUTH_RESPONSE" | jq -r '.verification_uri_complete')
-POLL_INTERVAL=$(echo "$AUTH_RESPONSE" | jq -r '.interval')
-
-# Display authentication banner
-echo ""
-echo "╔═════════════════════════════════════════════════════════════════════════════╗"
-echo "║                       HYTALE SERVER AUTHENTICATION REQUIRED                 ║"
-echo "╠═════════════════════════════════════════════════════════════════════════════╣"
-echo "║                                                                             ║"
-echo "║  Please authenticate the server by visiting the following URL:              ║"
-echo "║                                                                             ║"
-echo "║  $VERIFICATION_URI  ║"
-echo "║                                                                             ║"
-echo "║  1. Click the link above or copy it to your browser                         ║"
-echo "║  2. Sign in with your Hytale account                                        ║"
-echo "║  3. Authorize the server                                                    ║"
-echo "║                                                                             ║"
-echo "║  Waiting for authentication...                                              ║"
-echo "║                                                                             ║"
-echo "╚═════════════════════════════════════════════════════════════════════════════╝"
-echo ""
-
-# Step 2: Poll for access token
-ACCESS_TOKEN=""
-while [ -z "$ACCESS_TOKEN" ]; do
-    sleep $POLL_INTERVAL
-
-    TOKEN_RESPONSE=$(curl -s -X POST "https://oauth.accounts.hytale.com/oauth2/token" \
-      -H "Content-Type: application/x-www-form-urlencoded" \
-      -d "client_id=hytale-server" \
-      -d "grant_type=urn:ietf:params:oauth:grant-type:device_code" \
-      -d "device_code=$DEVICE_CODE")
-
-    # Check if we got an error
-    ERROR=$(echo "$TOKEN_RESPONSE" | jq -r '.error // empty')
-
-    if [ "$ERROR" = "authorization_pending" ]; then
-        echo "Still waiting for authentication..."
-        continue
-    elif [ -n "$ERROR" ]; then
-        echo "Authentication error: $ERROR"
-        exit 1
-    else
-        # Successfully authenticated
-        ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token')
-        echo ""
-        echo "✓ Authentication successful!"
-        echo ""
-    fi
-done
-
-# Fetch available game profiles
-echo "Fetching game profiles..."
-
-PROFILES_RESPONSE=$(curl -s -X GET "https://account-data.hytale.com/my-account/get-profiles" \
-  -H "Authorization: Bearer $ACCESS_TOKEN")
-
-# Check if profiles list is empty
-PROFILES_COUNT=$(echo "$PROFILES_RESPONSE" | jq '.profiles | length')
-
-if [ "$PROFILES_COUNT" -eq 0 ]; then
-    echo "Error: No game profiles found. You need to purchase Hytale to run a server."
-    exit 1
-fi
-
-# Select profile based on GAME_PROFILE variable
-if [ -n "$GAME_PROFILE" ]; then
-    # User specified a profile username, find matching UUID
-    echo "Looking for profile: $GAME_PROFILE"
-    PROFILE_UUID=$(echo "$PROFILES_RESPONSE" | jq -r ".profiles[] | select(.username == \"$GAME_PROFILE\") | .uuid")
-
-    if [ -z "$PROFILE_UUID" ] || [ "$PROFILE_UUID" = "null" ]; then
-        echo "Error: Profile '$GAME_PROFILE' not found."
-        echo "Available profiles:"
-        echo "$PROFILES_RESPONSE" | jq -r '.profiles[] | "  - \(.username)"'
-        exit 1
-    fi
-
-    echo "✓ Using profile: $GAME_PROFILE (UUID: $PROFILE_UUID)"
+# Check for cached authentication tokens
+if check_cached_tokens && load_cached_tokens; then
+    echo "Using cached authentication - skipping login prompt"
 else
-    # Use first profile from the list
-    PROFILE_UUID=$(echo "$PROFILES_RESPONSE" | jq -r '.profiles[0].uuid')
-    PROFILE_USERNAME=$(echo "$PROFILES_RESPONSE" | jq -r '.profiles[0].username')
-
-    echo "✓ Using default profile: $PROFILE_USERNAME (UUID: $PROFILE_UUID)"
+    # Perform full authentication if no valid cache exists
+    perform_authentication
 fi
-
-echo ""
-
-# Create game server session
-echo "Creating game server session..."
-
-SESSION_RESPONSE=$(curl -s -X POST "https://sessions.hytale.com/game-session/new" \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"uuid\": \"${PROFILE_UUID}\"}")
-
-# Validate JSON response
-if ! echo "$SESSION_RESPONSE" | jq empty 2>/dev/null; then
-    echo "Error: Invalid JSON response from game session creation"
-    echo "Response: $SESSION_RESPONSE"
-    exit 1
-fi
-
-# Extract session and identity tokens
-SESSION_TOKEN=$(echo "$SESSION_RESPONSE" | jq -r '.sessionToken')
-IDENTITY_TOKEN=$(echo "$SESSION_RESPONSE" | jq -r '.identityToken')
-
-if [ -z "$SESSION_TOKEN" ] || [ "$SESSION_TOKEN" = "null" ]; then
-    echo "Error: Failed to create game server session"
-    echo "Response: $SESSION_RESPONSE"
-    exit 1
-fi
-
-echo "✓ Game server session created successfully!"
-echo ""
 
 echo "Starting Hytale server..."
 

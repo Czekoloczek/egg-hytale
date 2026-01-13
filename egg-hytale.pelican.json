@@ -4,7 +4,7 @@
         "version": "PLCN_v3",
         "update_url": "https://cdn.nat.gg/egg/egg-hytale.pelican.json"
     },
-    "exported_at": "2026-01-13T13:55:29+00:00",
+    "exported_at": "2026-01-13T14:49:27+00:00",
     "name": "Hytale",
     "author": "contact@natroutter.fi",
     "uuid": "6594b287-2d7b-4249-bc93-4d40283c57e3",
@@ -29,7 +29,7 @@
     },
     "config": {
         "files": "{}",
-        "startup": "{\n    \"done\": \"Done!\"\n}",
+        "startup": "{\n    \"done\": \"Hytale Server Booted!\"\n}",
         "logs": "{}",
         "stop": "stop"
     },
@@ -49,8 +49,7 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": [
-                "boolean",
-                "required"
+                "boolean"
             ],
             "sort": 4
         },
@@ -62,8 +61,7 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": [
-                "boolean",
-                "required"
+                "boolean"
             ],
             "sort": 2
         },
@@ -89,9 +87,9 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": [
-                "required",
                 "string",
-                "in:authenticated,offline"
+                "in:authenticated,offline",
+                "required"
             ],
             "sort": 5
         },
@@ -103,7 +101,6 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": [
-                "required",
                 "boolean"
             ],
             "sort": 11
@@ -116,7 +113,6 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": [
-                "required",
                 "string"
             ],
             "sort": 7
@@ -143,8 +139,7 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": [
-                "boolean",
-                "required"
+                "boolean"
             ],
             "sort": 10
         },
@@ -156,8 +151,7 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": [
-                "boolean",
-                "required"
+                "boolean"
             ],
             "sort": 6
         },
@@ -195,7 +189,6 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": [
-                "required",
                 "boolean"
             ],
             "sort": 9

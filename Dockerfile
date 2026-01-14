@@ -11,8 +11,17 @@ USER root
 # Copy Pterodactyl entrypoint
 COPY --from=ghcr.io/parkervcp/yolks:java_25 --chmod=755 /entrypoint.sh /entrypoint.sh
 
+# Capture target architecture for conditional package installation
+ARG TARGETARCH
+
 # Install dependencies
-RUN apt update -y && apt install -y unzip jq curl && rm -rf /var/lib/apt/lists/*
+# On non-amd64 platforms, install qemu-user-static and binfmt-support to enable amd64 binary emulation
+RUN apt update -y && \
+    apt install -y unzip jq curl && \
+    if [ "$TARGETARCH" != "amd64" ]; then \
+        apt install -y qemu-user-static binfmt-support; \
+    fi && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy entry.sh as root-owned (so container user can't modify it)
 COPY --chmod=755 ./entry.sh /entry.sh

@@ -66,6 +66,52 @@ esac
 echo "Detected architecture: $ARCH"
 echo "Selected downloader: $DOWNLOADER"
 
+# Function to run the downloader with qemu fallback for ARM systems
+run_downloader() {
+    # Try native execution first
+    # Capture stderr to check for exec format errors
+    local stderr_output
+    stderr_output=$("$DOWNLOADER" "$@" 2>&1)
+    local exit_code=$?
+    
+    if [ $exit_code -eq 0 ]; then
+        echo "$stderr_output"
+        return 0
+    fi
+    
+    # Native execution failed, check if it's an exec format error
+    # This typically happens on ARM when trying to run amd64 binaries
+    if [[ "$stderr_output" == *"Exec format error"* ]] || [[ "$stderr_output" == *"cannot execute binary file"* ]]; then
+        # Only attempt qemu fallback if we're on ARM and using amd64 binary
+        if [[ "$ARCH" =~ ^(aarch64|arm64|armv7l|armv6l)$ ]] && [[ "$DOWNLOADER" == *"amd64"* ]]; then
+            echo "Note: Native execution failed, attempting qemu fallback..." >&2
+            
+            # Try qemu-x86_64-static first (commonly available with qemu-user-static package)
+            if command -v qemu-x86_64-static &> /dev/null; then
+                echo "Using qemu-x86_64-static to run amd64 binary on ARM" >&2
+                qemu-x86_64-static "$DOWNLOADER" "$@"
+                return $?
+            # Fall back to qemu-x86_64 if static version not found
+            elif command -v qemu-x86_64 &> /dev/null; then
+                echo "Using qemu-x86_64 to run amd64 binary on ARM" >&2
+                qemu-x86_64 "$DOWNLOADER" "$@"
+                return $?
+            else
+                echo "Error: Cannot run amd64 binary on ARM architecture" >&2
+                echo "  - Native execution failed (likely missing kernel binfmt support)" >&2
+                echo "  - qemu-x86_64-static not found" >&2
+                echo "  - qemu-x86_64 not found" >&2
+                echo "Please ensure qemu-user-static is installed in the container" >&2
+                return 1
+            fi
+        fi
+    fi
+    
+    # For non-ARM systems, non-amd64 binaries, or other errors, show the error and fail
+    echo "$stderr_output" >&2
+    return $exit_code
+}
+
 # Function to extract downloaded server files
 extract_server_files() {
     echo "Extracting server files..."
@@ -353,12 +399,15 @@ if [ ! -f ".hytale-downloader-credentials.json" ]; then
     INITIAL_SETUP=1
     echo "Credentials file not found, running initial setup..."
     echo "Starting Hytale downloader..."
-    $DOWNLOADER -check-update
-    $DOWNLOADER -patchline $PATCHLINE -download-path server.zip
+    run_downloader -check-update
+    run_downloader -patchline "$PATCHLINE" -download-path server.zip
     extract_server_files
 
     # Save version info after initial setup
-    DOWNLOADER_VERSION=$($DOWNLOADER -print-version)
+    if ! DOWNLOADER_VERSION=$(run_downloader -print-version); then
+        echo "Error: Failed to get downloader version"
+        exit 1
+    fi
     echo "$DOWNLOADER_VERSION" > version.txt
     echo "Version info saved for later use!"
 fi
@@ -376,7 +425,10 @@ if [ "${AUTOMATIC_UPDATE}" = "1" ] && [ "${INITIAL_SETUP}" = "0" ]; then
     fi
 
     # Get remote/downloader version
-    DOWNLOADER_VERSION=$($DOWNLOADER -print-version)
+    if ! DOWNLOADER_VERSION=$(run_downloader -print-version); then
+        echo "Error: Failed to get downloader version"
+        exit 1
+    fi
 
     echo "Local version: $LOCAL_VERSION"
     echo "Downloader version: $DOWNLOADER_VERSION"
@@ -385,8 +437,8 @@ if [ "${AUTOMATIC_UPDATE}" = "1" ] && [ "${INITIAL_SETUP}" = "0" ]; then
     if [ "$LOCAL_VERSION" != "$DOWNLOADER_VERSION" ]; then
         echo "Version mismatch, running update..."
 
-        $DOWNLOADER -check-update
-        $DOWNLOADER -patchline $PATCHLINE -download-path server.zip
+        run_downloader -check-update
+        run_downloader -patchline "$PATCHLINE" -download-path server.zip
         extract_server_files
 
         # Update version.txt after successful update

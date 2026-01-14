@@ -16,8 +16,55 @@
 
 DOWNLOAD_URL="https://downloader.hytale.com/hytale-downloader.zip"
 DOWNLOAD_FILE="hytale-downloader.zip"
-DOWNLOADER="./hytale-downloader-linux-amd64"
 AUTH_CACHE_FILE=".hytale-auth-tokens.json"
+
+# Detect host architecture and select appropriate downloader binary
+ARCH=$(uname -m)
+case "$ARCH" in
+    aarch64|arm64)
+        # Try ARM64 variant first, fall back to arm, then amd64
+        if [ -f "./hytale-downloader-linux-arm64" ]; then
+            DOWNLOADER="./hytale-downloader-linux-arm64"
+        elif [ -f "./hytale-downloader-linux-arm" ]; then
+            DOWNLOADER="./hytale-downloader-linux-arm"
+        elif [ -f "./hytale-downloader-linux-amd64" ]; then
+            DOWNLOADER="./hytale-downloader-linux-amd64"
+            echo "Note: Using amd64 downloader via emulation on ARM64 host"
+        else
+            echo "Error: No compatible downloader binary found for ARM64 architecture"
+            exit 1
+        fi
+        ;;
+    armv7l|armv6l)
+        # Try ARM variant, fall back to amd64
+        if [ -f "./hytale-downloader-linux-arm" ]; then
+            DOWNLOADER="./hytale-downloader-linux-arm"
+        elif [ -f "./hytale-downloader-linux-amd64" ]; then
+            DOWNLOADER="./hytale-downloader-linux-amd64"
+            echo "Note: Using amd64 downloader via emulation on ARM host"
+        else
+            echo "Error: No compatible downloader binary found for ARM architecture"
+            exit 1
+        fi
+        ;;
+    x86_64)
+        # Use amd64 binary on x86_64
+        if [ -f "./hytale-downloader-linux-amd64" ]; then
+            DOWNLOADER="./hytale-downloader-linux-amd64"
+        else
+            echo "Error: No downloader binary found for amd64 architecture"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Error: Unsupported architecture: $ARCH"
+        echo "Supported architectures: aarch64, arm64, armv7l, armv6l, x86_64"
+        exit 1
+        ;;
+esac
+
+echo "Detected architecture: $ARCH"
+echo "Selected downloader: $DOWNLOADER"
 
 # Function to extract downloaded server files
 extract_server_files() {
